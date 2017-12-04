@@ -1,0 +1,191 @@
+;*******************************************************************************
+;   First name_Last name 
+;*******************************************************************************
+#include "msp430.h"
+;-------------------------------------------------------------------------------
+            ORG     01500h                  ; Progam Start (4K RAM)
+;-------------------------------------------------------------------------------
+RESET       mov.w   #0280h,SP               ; Set stackpointer (128B RAM device)
+StopWDT     mov.w   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+
+; ================================INITIALIZATION================================
+; =============Changing Pins from I/O to Secondary function for SPI=============
+; Set P3.0 as UCA0CLK and P3.5 as UCA0SOMI/UCA0RXD
+bis.b #BIT0+BIT5, &P3SEL; 
+
+; ================================INITIALIZATION================================
+; ========================= Set P4.0 as output for CE ==========================
+bic.b #BIT0, &P4SEL; [0 I/O] [1 other]
+bis.b #BIT0, &P4DIR; [0 input] [1 output]
+
+; ================================INITIALIZATION================================
+; =====================Creating 12KHz Frequency for ACLK========================
+bic.b #XTS, &BCSCTL1; 
+bis.b #BIT5, &BCSCTL3; LFXT1Sx=10 while XTS=0 means (ACLK <- VLOCLK=12KHz) *BIT5
+bic.b #BIT4, &BCSCTL3; *BIT4
+
+; ================================INITIALIZATION================================
+; ==============================SPI Configuration===============================
+mov #060h ,r6;
+bis.b #UCSWRST, &UCA0CTL1; Allows us to configure SPI settings *BIT0
+
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$ UCA0CTL0 $$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; UCCKPH *BIT7 Clock phase select
+bic.b #UCCKPL, &UCA0CTL0; Inactive Clock=[0 low] [1 high] *BIT6
+bis.b #UCMSB, &UCA0CTL0; Receive and transmit shift direction=[0 LSB first] [1 MSB first] *BIT5
+bic.b #UC7BIT, &UCA0CTL0; [0 8BitData] [1 7BitData] *BIT4
+bis.b #UCMST, &UCA0CTL0; [0 Slave] [1 Master] *BIT3
+bic.b #UCMODE1+UCMODE0, &UCA0CTL0; 3 Wire SPI [modes explained below] *BIT2+BIT1
+/*
+UCMODEx:
+00 3-Pin SPI 
+01 4-Pin SPI with UCxSTE active high: slave enabled when UCxSTE = 1 
+10 4-Pin SPI with UCxSTE active low: slave enabled when UCxSTE = 0 
+11 I2C Mode 
+*/
+bis.b #UCSYNC, &UCA0CTL0; [0 Asynchronous] [1 Synchronous mode] *BIT0
+
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$ UCA0CTL1 $$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+bic.b #UCSSEL1, &UCA0CTL1; Clock select1 *BIT7 [modes explained below]
+bis.b #UCSSEL0, &UCA0CTL1; Clock select0 *BIT6
+/*
+UCSSELx:
+00 NA
+01 ACLK
+10 SMCLK
+11 SMCLK
+*/
+; *Bits 5-1 unused
+; UCSWRST *BIT0: needs to be set first thing when initializing SPI and it has to be 
+; reseted after initialization is over (Already done in this code)
+
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; $$$$$$$$$ UCA0BR0 + UCA0BR1 $$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; Clock Frequency/(UCA0BR0 + 256*UCA0BR1)
+; UCA0BR1 High Byte
+; UCA0BR0 Low Byte
+mov.b #00d, &UCA0BR1;
+mov.b #02d, &UCA0BR0; ClockFreq/2
+
+; $$$$ ErrorFlags & InternalFeedback $$$$
+; $$$$$$$$$$$$$$ UCA0STAT $$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+bic.b #UCLISTEN, &UCA0STAT; [0 Disabled] [1 output internally fedback to reciever] *BIT7
+; UCFE *BIT6 (Not taught?) Framing error flag
+; OCOE *BIT5 Overrun error flag. 1=character transferred to UCxRXBUF before last one was read. Clears automatically if UCxRXBUF read, must not be cleared by software.
+; *Bits 4-1 unused
+; UCBUSY *BIT0 0=USCI inactive. 1=USCI active.
+
+; $$$$$$$$$$ Recieve Buffer $$$$$&$$$$$$$
+; $$$$$$$$$$$$$ UCA0RXBUF $$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; UCRXBUFx *Bits 7-0, Recieve Buffer. Reading UCA0RXBUF resets the receive-error bits, and UCA0RXIFG. 
+
+; $$$$$$$$$$ Transmit Buffer $$$$$$$$$$$$
+; $$$$$$$$$$$$$ UCA0TXBUF $$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; UCTXBUFx *Bits 7-0, Transmit Buffer.
+
+; $$$$$$$$$$$$ IE for A0 B0 $$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$ IE2 $$$$$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; *Bits 7-4 for other modules
+; UCB0TXIE *BIT3 B0 Transmit IE [0 interrupt disabled] [1 interrupt enabled]
+; UCB0RXIE *BIT2 B0 Recieve IE [0 interrupt disabled] [1 interrupt enabled]
+bic.b #UCA0TXIE, &IE2; A0 Transmit IE [0 interrupt disabled] [1 interrupt enabled] *BIT1 
+bic.b #UCA0RXIE, &IE2; A0 Recieve IE [0 interrupt disabled] [1 interrupt enabled] *BIT0 
+; $$$$$$$$$$ Flag for A0 B0 $$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$ IFG2 $$$$$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; *Bits 7-4 for other modules
+; UCB0TXIFG *BIT3 B0 Transmit Flag [0 no Interrupt pending] [1 Interrupt pending]
+; UCB0RXIFG *BIT2 B0 Recieve Flag [0 no Interrupt pending] [1 Interrupt pending]
+; UCA0TXIFG *BIT1 A0 Transmit Flag [0 no Interrupt pending] [1 Interrupt pending]
+; UCA0RXIFG *BIT0 A0 Recieve Flag [0 no Interrupt pending] [1 Interrupt pending]
+; $$$$$$$$$$$ IE for A1 B1 $$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$ UC1IE $$$$$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; *Bits 7-4 unused
+; UCB0TXIE *BIT3 B1 Transmit IE [0 interrupt disabled] [1 interrupt enabled]
+; UCB0RXIE *BIT2 B1 Recieve IE [0 interrupt disabled] [1 interrupt enabled]
+; UCA0TXIE *BIT1 A1 Transmit IE [0 interrupt disabled] [1 interrupt enabled]
+; UCA0RXIE *BIT0 A1 Recieve IE [0 interrupt disabled] [1 interrupt enabled]
+; $$$$$$$$$$ Flags for A1 B1 $$$$$$$$$$$$
+; $$$$$$$$$$$$$$ UC1IFG $$$$$$$$$$$$$$$$$
+; $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; *Bits 7-4 unused
+; UCB0TXIFG *BIT3 B1 Transmit Flag [0 no Interrupt pending] [1 Interrupt pending]
+; UCB0RXIFG *BIT2 B1 Recieve Flag [0 no Interrupt pending] [1 Interrupt pending]
+; UCA0TXIFG *BIT1 A1 Transmit Flag [0 no Interrupt pending] [1 Interrupt pending]
+; UCA0RXIFG *BIT0 A1 Recieve Flag [0 no Interrupt pending] [1 Interrupt pending]
+
+bic.b #UCSWRST, &UCA0CTL1; SPI Configuration over
+
+main
+;-------------------------------------------------------------------------------
+;           Start Code here
+;-------------------------------------------------------------------------------                                            
+/*
+bic #BIT1,ADC12CTL0;
+bis #BIT5+BIT4+BIT6, &ADC12CTL0;
+bis #BIT1,ADC12CTL0;
+bic #DAC12OPS+DAC12SREF1+DAC12SREF0+DAC12LSEL0+DAC12LSEL1+BIT4+BIT3+BIT2+BIT0+BIT7, &DAC12_0CTL; DAC0-> P6.6
+bis #DAC12RES+BIT8+BIT6+BIT5+BIT1, &DAC12_0CTL;
+bis #BIT9, &DAC12_0CTL;
+*/
+
+infinity_loop:
+
+; First time 8bits MSB -> r10
+bis.b #BIT0, &P4OUT; Activate CE
+nop;
+xor.b #BIT0, &UCA0TXBUF; Put something into TBuf so  clock activates
+CheckFlag_loop:
+bit.b #UCA0RXIFG, &IFG2;
+jnz RecieveDone;
+jmp CheckFlag_loop;
+RecieveDone:
+mov.b &UCA0RXBUF, r10; move data to r10
+; Second time 8bits LSB -> r11
+xor.b #BIT0, &UCA0TXBUF; Put something into TBuf so  clock activates
+CheckFlag_loop1:
+bit.b #UCA0RXIFG, &IFG2;
+jnz RecieveDone1;
+jmp CheckFlag_loop1;
+RecieveDone1:
+mov.b &UCA0RXBUF, r11; move data to r11
+bic.b #BIT0, &P4OUT; Deactivate CE
+/*
+rla r10;
+rla r10;
+rra r11;
+rra r11;
+rra r11;
+rra r11;
+rra r11;
+rra r11;
+add r11, r10;
+mov r10,&DAC12_0DAT;
+*/
+nop;
+nop;
+nop;
+nop;
+
+jmp infinity_loop;
+nop;
+              
+;-------------------------------------------------------------------------------
+;           End Code  here
+;-------------------------------------------------------------------------------
+;-------------------------------------------------------------------------------
+;           Interrupt Vectors
+;-------------------------------------------------------------------------------
+            ORG     0FFFEh                  ; MSP430 RESET Vector
+            DW      RESET                   ;
+            END
