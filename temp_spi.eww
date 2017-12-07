@@ -2,7 +2,7 @@
 
 <workspace>
   <project>
-    <path>$WS_DIR$\Lab11.ewp</path>
+    <path>$WS_DIR$\temp_spi.ewp</path>
   </project>
   <batchBuild/>
 </workspace>
