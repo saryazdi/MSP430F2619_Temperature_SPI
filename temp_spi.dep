@@ -7,13 +7,13 @@
     <name>Debug</name>
     <outputs>
       <file>$TOOLKIT_DIR$\inc\msp430.h</file>
-      <file>$PROJ_DIR$\Debug\List\Lab11.map</file>
+      <file>$PROJ_DIR$\Debug\List\temp_spi.map</file>
       <file>$PROJ_DIR$\Debug\Obj\asm.r43</file>
       <file>$PROJ_DIR$\asm.s43</file>
       <file>$TOOLKIT_DIR$\inc\msp430f2619.h</file>
       <file>$TOOLKIT_DIR$\config\linker\lnk430f2619.xcl</file>
       <file>$TOOLKIT_DIR$\config\linker\multiplier.xcl</file>
-      <file>$PROJ_DIR$\Debug\Exe\Lab11.d43</file>
+      <file>$PROJ_DIR$\Debug\Exe\temp_spi.d43</file>
     </outputs>
     <file>
       <name>$PROJ_DIR$\asm.s43</name>
@@ -31,7 +31,7 @@
       </inputs>
     </file>
     <file>
-      <name>$PROJ_DIR$\Debug\Exe\Lab11.d43</name>
+      <name>$PROJ_DIR$\Debug\Exe\temp_spi.d43</name>
       <outputs>
         <tool>
           <name>XLINK</name>
